@@ -246,9 +246,8 @@ HIPSYCL_DEFINE_GENFLOAT_STD_FUNCTION(trunc)
 
 namespace native {
 
-// TODO: Define these properly, including for host
-#ifdef SYCL_DEVICE_ONLY
 
+#ifdef SYCL_DEVICE_ONLY
 #define HIPSYCL_DEFINE_FAST_SINGLE_PRECISION_FUNCTION(name, fallback_func, fast_sp_func) \
   template<class float_type> \
   HIPSYCL_KERNEL_TARGET inline float_type name(float_type x)\
@@ -271,11 +270,26 @@ namespace native {
   \
   template<> \
   HIPSYCL_KERNEL_TARGET inline double name(double x) \
-  { return HIPSYCL_STD_FUNCTION(fast_dp_func)(x); } \
+  { return HIPSYCL_STD_FUNCTION(fast_dp_func)(x); }
 
+#else
+
+#define HIPSYCL_DEFINE_FAST_SINGLE_PRECISION_FUNCTION(name, fallback_func, fast_sp_func) \
+  template<class float_type> \
+  HIPSYCL_HOST_TARGET inline float_type name(float_type x)\
+  {return HIPSYCL_STD_FUNCTION(fallback_func)(x);}
+
+#define HIPSYCL_DEFINE_FAST_FUNCTION(name, fallback_func, \
+                                     fast_sp_func,\
+                                     fast_dp_func) \
+  template<class float_type> \
+  HIPSYCL_HOST_TARGET inline float_type name(float_type x)\
+  {return HIPSYCL_STD_FUNCTION(fallback_func)(x);}
+#endif
 
 HIPSYCL_DEFINE_FAST_SINGLE_PRECISION_FUNCTION(cos, sycl::cos, __cosf);
 HIPSYCL_DEFINE_FAST_SINGLE_PRECISION_FUNCTION(exp, sycl::exp, __expf);
+HIPSYCL_DEFINE_FAST_SINGLE_PRECISION_FUNCTION(exp10, sycl::exp10, __exp10f);
 HIPSYCL_DEFINE_FAST_SINGLE_PRECISION_FUNCTION(rsqrt, sycl::rsqrt, __frsqrt_rn);
 HIPSYCL_DEFINE_FAST_SINGLE_PRECISION_FUNCTION(log10, sycl::log10, __log10f);
 HIPSYCL_DEFINE_FAST_SINGLE_PRECISION_FUNCTION(log2, sycl::log2, __log2f);
@@ -283,19 +297,42 @@ HIPSYCL_DEFINE_FAST_SINGLE_PRECISION_FUNCTION(log, sycl::log, __logf);
 HIPSYCL_DEFINE_FAST_SINGLE_PRECISION_FUNCTION(sin, sycl::sin, __sinf);
 HIPSYCL_DEFINE_FAST_SINGLE_PRECISION_FUNCTION(tan, sycl::tan, __tanf);
 
-
+// TODO: see Issue #478
 HIPSYCL_DEFINE_FAST_FUNCTION(sqrt, sycl::sqrt, __fsqrt_rn, __dsqrt_rn);
 
 template<class float_type>
 HIPSYCL_KERNEL_TARGET
-inline float_type pow(float_type x, float_type y){return sycl::pow(x,y);}
+inline float_type powr(float_type x, float_type y){return sycl::pow(x,y);}
 
+#ifdef SYCL_DEVICE_ONLY
+/* While not clearly stated in docs, CUDA's __powf is implemented as exp2f(y *__log2f(x)),
+ * and thus works only for x>0, not x>=0 as required for sycl::native::powr.
+ */
 template<>
 HIPSYCL_KERNEL_TARGET
-inline float pow(float x, float y) { return HIPSYCL_STD_FUNCTION(__powf)(x,y); }
+inline float powr(float x, float y) { return HIPSYCL_STD_FUNCTION(__powf)(x,y); }
+#endif
+
+template<class float_type>
+HIPSYCL_KERNEL_TARGET
+inline float_type divide(float_type x, float_type y){return x/y;}
+
+#ifdef SYCL_DEVICE_ONLY
+template<>
+HIPSYCL_KERNEL_TARGET
+inline float divide(float x, float y) { return HIPSYCL_STD_FUNCTION(__fdividef)(x,y); }
+#endif
+
+template<class float_type>
+HIPSYCL_KERNEL_TARGET
+inline float_type recip(float_type x){return divide(float_type{1.0} / x);}
+
+// No CUDA intrinsics for the following. A better implementation might be provided, but is not.
+HIPSYCL_DEFINE_GENFLOAT_STD_FUNCTION(exp2);
 
 HIPSYCL_DEFINE_FLOATN_MATH_FUNCTION(cos, cos);
 HIPSYCL_DEFINE_FLOATN_MATH_FUNCTION(exp, exp);
+HIPSYCL_DEFINE_FLOATN_MATH_FUNCTION(exp10, exp10);
 HIPSYCL_DEFINE_FLOATN_MATH_FUNCTION(rsqrt, rsqrt);
 HIPSYCL_DEFINE_FLOATN_MATH_FUNCTION(log10, log10);
 HIPSYCL_DEFINE_FLOATN_MATH_FUNCTION(log2, log2);
@@ -303,9 +340,9 @@ HIPSYCL_DEFINE_FLOATN_MATH_FUNCTION(log, log);
 HIPSYCL_DEFINE_FLOATN_MATH_FUNCTION(sin, sin);
 HIPSYCL_DEFINE_FLOATN_MATH_FUNCTION(tan, tan);
 HIPSYCL_DEFINE_FLOATN_MATH_FUNCTION(sqrt, sqrt);
-HIPSYCL_DEFINE_FLOATN_BINARY_MATH_FUNCTION(pow, pow);
-
-#endif
+HIPSYCL_DEFINE_FLOATN_MATH_FUNCTION(recip, recip);
+HIPSYCL_DEFINE_FLOATN_BINARY_MATH_FUNCTION(powr, powr);
+HIPSYCL_DEFINE_FLOATN_BINARY_MATH_FUNCTION(divide, divide);
 
 } // native
 

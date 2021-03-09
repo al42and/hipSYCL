@@ -332,6 +332,162 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(math_genfloat_binary, T,
   }
 }
 
+BOOST_AUTO_TEST_CASE_TEMPLATE(math_native_genfloat_unary_positive_arg, T,
+                              math_test_genfloats::type) {
+
+  constexpr int D = vector_length_v<T>;
+  using DT = vector_elem_t<T>;
+
+  namespace s = cl::sycl;
+
+  constexpr int FUN_COUNT = 5;
+
+  // build inputs
+
+  s::queue queue;
+  s::buffer<T> buf{{FUN_COUNT + 1}};
+  {
+    auto acc = buf.template get_access<cl::sycl::access::mode::write>();
+    acc[0] = get_math_input<DT, D>({0.01, 10.0, 1.0, 1.5, 2.0, 0.5, 5.0, 17.0, 0.01, 10.0, 1.0, 1.5, 2.0, 0.5, 5.0, 17.0});
+    for(int i = 1; i < FUN_COUNT + 1; ++i) {
+      acc[i] = T{DT{0}};
+    }
+  }
+
+  // run functions
+
+  queue.submit([&](cl::sycl::handler &cgh) {
+    auto acc = buf.template get_access<s::access::mode::read_write>(cgh);
+    cgh.single_task<kernel_name<class math_binary, D, DT>>([=]() {
+      int i = 1;
+      acc[i++] = s::native::sqrt(acc[0]);
+      acc[i++] = s::native::rsqrt(acc[0]);
+      acc[i++] = s::native::log10(acc[0]);
+      acc[i++] = s::native::log2(acc[0]);
+      acc[i++] = s::native::log(acc[0]);
+    });
+  });
+
+  // check results
+
+  {
+    auto acc = buf.template get_access<s::access::mode::read>();
+
+    for(int c = 0; c < std::max(D,1); ++c) {
+      int i = 1;
+      BOOST_TEST(comp(acc[i++], c) == std::sqrt(static_cast<double>(comp(acc[0], c))), tolerance);
+      BOOST_TEST(comp(acc[i++], c) == (1.0/std::sqrt(comp(acc[0], c))), tolerance);
+      BOOST_TEST(comp(acc[i++], c) == std::log10(static_cast<double>(comp(acc[0], c))), tolerance);
+      BOOST_TEST(comp(acc[i++], c) == std::log2(static_cast<double>(comp(acc[0], c))), tolerance);
+      BOOST_TEST(comp(acc[i++], c) == std::log(static_cast<double>(comp(acc[0], c))), tolerance);
+    }
+  }
+}
+
+BOOST_AUTO_TEST_CASE_TEMPLATE(math_native_genfloat_unary, T,
+                              math_test_genfloats::type) {
+
+  constexpr int D = vector_length_v<T>;
+  using DT = vector_elem_t<T>;
+
+  namespace s = cl::sycl;
+
+  constexpr int FUN_COUNT = 6;
+
+  // build inputs
+
+  s::queue queue;
+  s::buffer<T> buf{{FUN_COUNT + 1}};
+  {
+    auto acc = buf.template get_access<cl::sycl::access::mode::write>();
+    acc[0] = get_math_input<DT, D>({0.01, -10.0, 1.0, 0.0, -2.0, 0.5, -5.0, 17.0, -0.01, 10.0, -1.0, 0.0, 2.0, -0.5, 5.0, -17.0});
+    for(int i = 1; i < FUN_COUNT + 1; ++i) {
+      acc[i] = T{DT{0}};
+    }
+  }
+
+  // run functions
+
+  queue.submit([&](cl::sycl::handler &cgh) {
+    auto acc = buf.template get_access<s::access::mode::read_write>(cgh);
+    cgh.single_task<kernel_name<class math_binary, D, DT>>([=]() {
+      int i = 1;
+      acc[i++] = s::native::cos(acc[0]);
+      acc[i++] = s::native::exp(acc[0]);
+      acc[i++] = s::native::exp2(acc[0]);
+      acc[i++] = s::native::exp10(acc[0]);
+      acc[i++] = s::native::sin(acc[0]);
+      acc[i++] = s::native::tan(acc[0]);
+    });
+  });
+
+  // check results
+
+  {
+    auto acc = buf.template get_access<s::access::mode::read>();
+
+    for(int c = 0; c < std::max(D,1); ++c) {
+      int i = 1;
+      BOOST_TEST(comp(acc[i++], c) == std::cos(static_cast<double>(comp(acc[0], c))), tolerance);
+      BOOST_TEST(comp(acc[i++], c) == std::exp(static_cast<double>(comp(acc[0], c))), tolerance);
+      BOOST_TEST(comp(acc[i++], c) == std::exp2(static_cast<double>(comp(acc[0], c))), tolerance);
+      BOOST_TEST(comp(acc[i++], c) == std::pow(10, static_cast<double>(comp(acc[0], c))), tolerance);
+      BOOST_TEST(comp(acc[i++], c) == std::sin(static_cast<double>(comp(acc[0], c))), tolerance);
+      BOOST_TEST(comp(acc[i++], c) == std::tan(static_cast<double>(comp(acc[0], c))), tolerance);
+    }
+  }
+}
+
+
+
+BOOST_AUTO_TEST_CASE_TEMPLATE(math_native_genfloat_binary, T,
+                              math_test_genfloats::type) {
+
+  constexpr int D = vector_length_v<T>;
+  using DT = vector_elem_t<T>;
+
+  namespace s = cl::sycl;
+
+  constexpr int FUN_COUNT = 2;
+
+  // build inputs
+
+  s::queue queue;
+  s::buffer<T> buf{{FUN_COUNT + 2}};
+  {
+    auto acc = buf.template get_access<cl::sycl::access::mode::write>();
+    acc[0] = get_math_input<DT, D>({7.0, 8.0, 9.0, 1.0, 17.0, 4.0, 2.0, 3.0, 7.0, 8.0, 9.0, 1.0, 17.0, 4.0, 2.0, 3.0});
+    acc[1] = get_math_input<DT, D>({17.0, -4.0, -2.0, 3.0, 7.0, -8.0, 9.0, -1.0, 17.0, -4.0, -2.0, 3.0, 7.0, -8.0, 9.0, -1.0});
+    for(int i = 2; i < FUN_COUNT + 2; ++i) {
+      acc[i] = T{DT{0}};
+    }
+  }
+
+  // run functions
+
+  queue.submit([&](cl::sycl::handler &cgh) {
+    auto acc = buf.template get_access<s::access::mode::read_write>(cgh);
+    cgh.single_task<kernel_name<class math_binary, D, DT>>([=]() {
+      int i = 2;
+      acc[i++] = s::native::powr(acc[0], acc[1]);
+      acc[i++] = s::native::divide(acc[0], acc[1]);
+    });
+  });
+
+  // check results
+
+  {
+    auto acc = buf.template get_access<s::access::mode::read>();
+
+    for(int c = 0; c < std::max(D,1); ++c) {
+      int i = 2;
+      BOOST_TEST(comp(acc[i++], c) == std::pow<double>(comp(acc[0], c), comp(acc[1], c)), tolerance);
+      BOOST_TEST(comp(acc[i++], c) == (comp(acc[0], c) / comp(acc[1], c)), tolerance);
+    }
+  }
+}
+
+
 BOOST_AUTO_TEST_CASE_TEMPLATE(common_functions, T,
     math_test_genfloats::type) {
 
