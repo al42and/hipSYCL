@@ -27,6 +27,8 @@
 
 #include <cassert>
 
+#include "roctracer/roctx.h"
+
 #include "hipSYCL/runtime/inorder_executor.hpp"
 #include "hipSYCL/runtime/inorder_queue.hpp"
 #include "hipSYCL/runtime/operations.hpp"
@@ -108,6 +110,7 @@ bool inorder_executor::is_taskgraph() const {
 
 void inorder_executor::submit_directly(dag_node_ptr node, operation *op,
                                        const std::vector<dag_node_ptr> &reqs) {
+  roctxRangePush("inorder_executor::submit_directly");
   
   HIPSYCL_DEBUG_INFO << "inorder_executor: Processing node " << node.get()
 	  << " with " << reqs.size() << " non-virtual requirement(s) and "
@@ -115,8 +118,10 @@ void inorder_executor::submit_directly(dag_node_ptr node, operation *op,
 
   assert(!op->is_requirement());
 
-  if (node->is_submitted())
+  if (node->is_submitted()) {
+    roctxRangePop();
     return;
+  }
 
   node->assign_to_execution_lane(_q.get());
 
@@ -179,6 +184,7 @@ void inorder_executor::submit_directly(dag_node_ptr node, operation *op,
       if (!res.is_success()) {
         register_error(res);
         node->cancel();
+        roctxRangePop();
         return;
       }
     }
@@ -193,6 +199,7 @@ void inorder_executor::submit_directly(dag_node_ptr node, operation *op,
   if (!res.is_success()) {
     register_error(res);
     node->cancel();
+    roctxRangePop();
     return;
   }
 
@@ -202,6 +209,7 @@ void inorder_executor::submit_directly(dag_node_ptr node, operation *op,
   } else {
     node->mark_submitted(_q->insert_event());
   }
+  roctxRangePop(); 
 }
 
 inorder_queue* inorder_executor::get_queue() const {

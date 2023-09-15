@@ -29,6 +29,7 @@
 #ifndef HIPSYCL_QUEUE_HPP
 #define HIPSYCL_QUEUE_HPP
 
+#include "roctracer/roctx.h"
 #include "hipSYCL/common/debug.hpp"
 #include "hipSYCL/glue/error.hpp"
 #include "hipSYCL/runtime/application.hpp"
@@ -336,6 +337,8 @@ public:
 
   template <typename T>
   event submit(const property_list& prop_list, T cgf) {
+    roctxRangePush(__PRETTY_FUNCTION__);
+
     std::lock_guard<std::mutex> lock{*_lock};
 
     rt::execution_hints hints = _default_hints;
@@ -388,7 +391,9 @@ public:
 
     rt::dag_node_ptr node = execute_submission(cgf, cgh);
     
-    return event{node, _handler};
+    auto ret = event{node, _handler};
+    roctxRangePop();
+    return ret;
   }
 
 
@@ -903,6 +908,7 @@ private:
 
   template <class Cgf>
   rt::dag_node_ptr execute_submission(Cgf cgf, handler &cgh) {
+roctxRangePush(__PRETTY_FUNCTION__);
     if (is_in_order()) {
       auto previous = *_previous_submission;
       if(previous)
@@ -915,6 +921,7 @@ private:
     if (is_in_order()) {
       *_previous_submission = node;
     }
+roctxRangePop();
     return node;
   }
       

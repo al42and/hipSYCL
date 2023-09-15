@@ -42,6 +42,7 @@
 #include "util.hpp"
 #include "error.hpp"
 #include "hw_model/cost.hpp"
+#include "roctracer/roctx.h"
 
 #include <cstring>
 #include <functional>

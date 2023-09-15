@@ -28,6 +28,7 @@
 #include "hipSYCL/runtime/hip/hip_target.hpp"
 #include "hipSYCL/common/hcf_container.hpp"
 #include "hipSYCL/runtime/hip/hip_hardware_manager.hpp"
+#include "roctracer/roctx.h"
 #include "hipSYCL/runtime/hip/hip_queue.hpp"
 #include "hipSYCL/runtime/hip/hip_backend.hpp"
 #include "hipSYCL/runtime/error.hpp"
@@ -343,6 +344,7 @@ result hip_queue::submit_memcpy(memcpy_operation & op, dag_node_ptr node) {
 
 result hip_queue::submit_kernel(kernel_operation &op, dag_node_ptr node) {
 
+  roctxRangePush("hip_queue::submit_kernel");
   this->activate_device();
   rt::backend_kernel_launcher *l =
       op.get_launcher().find_launcher(backend_id::hip);
@@ -361,6 +363,7 @@ result hip_queue::submit_kernel(kernel_operation &op, dag_node_ptr node) {
   hip_instrumentation_guard instrumentation{this, op, node};
   l->invoke(node.get(), op.get_launcher().get_kernel_configuration());
 
+  roctxRangePop();
   return make_success();
 }
 

@@ -54,6 +54,7 @@
 #include "libkernel/group.hpp"
 #include "libkernel/detail/local_memory_allocator.hpp"
 #include "detail/util.hpp"
+#include "roctracer/roctx.h"
 
 #include "hipSYCL/common/debug.hpp"
 #include "hipSYCL/runtime/data.hpp"
@@ -914,6 +915,7 @@ private:
 
   rt::dag_node_ptr create_task(std::unique_ptr<rt::operation> op,
                                rt::execution_hints &hints) {
+    roctxRangePush(__PRETTY_FUNCTION__);
 
     bool uses_buffers = false;
     bool has_non_instant_dependency = false;
@@ -942,7 +944,9 @@ private:
         op->is_requirement()) {
       // traditional submission
       rt::dag_build_guard build{_rt->dag()};
-      return build.builder()->add_command_group(std::move(op), _requirements, hints);
+      auto rv = build.builder()->add_command_group(std::move(op), _requirements, hints);
+      roctxRangePop();
+      return rv;
     } else {
       // instant submission
       hints.add_hint(rt::make_execution_hint<rt::hints::instant_execution>());
@@ -953,6 +957,7 @@ private:
           hints.get_hint<rt::hints::bind_to_device>()->get_device_id());
       node->assign_to_executor(executor);
       executor->submit_directly(node, node->get_operation(), _requirements.get());
+      roctxRangePop();
       return node;
     }
   }
