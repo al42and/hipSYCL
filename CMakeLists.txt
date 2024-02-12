@@ -295,6 +295,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+include(GNUInstallDirs)
+
 add_subdirectory(src)
 
 set(ACPP_CONFIG_FILE_PATH "${PROJECT_BINARY_DIR}")
@@ -403,14 +405,14 @@ if(NOT ROCM_CXX_FLAGS)
   # __float128 even though it is not supported for CUDA / HIP,
   # see https://bugs.llvm.org/show_bug.cgi?id=47559.
 
-  set(ROCM_CXX_FLAGS "-isystem $HIPSYCL_PATH/include/AdaptiveCpp/hipSYCL/std/hiplike -isystem ${CLANG_INCLUDE_PATH} -U__FLOAT128__ -U__SIZEOF_FLOAT128__ -I$HIPSYCL_ROCM_PATH/include -I$HIPSYCL_ROCM_PATH/include --rocm-device-lib-path=$HIPSYCL_ROCM_PATH/amdgcn/bitcode --rocm-path=$HIPSYCL_ROCM_PATH -fhip-new-launch-api -mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false -D__HIP_ROCclr__" CACHE STRING "Arguments passed to compiler to compile SYCL applications with ROCm")
+  set(ROCM_CXX_FLAGS "-isystem $HIPSYCL_PATH/${CMAKE_INSTALL_INCLUDEDIR}/AdaptiveCpp/hipSYCL/std/hiplike -isystem ${CLANG_INCLUDE_PATH} -U__FLOAT128__ -U__SIZEOF_FLOAT128__ -I$HIPSYCL_ROCM_PATH/include -I$HIPSYCL_ROCM_PATH/include --rocm-device-lib-path=$HIPSYCL_ROCM_PATH/amdgcn/bitcode --rocm-path=$HIPSYCL_ROCM_PATH -fhip-new-launch-api -mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false -D__HIP_ROCclr__" CACHE STRING "Arguments passed to compiler to compile SYCL applications with ROCm")
 endif()
 
 if(NOT CUDA_CXX_FLAGS)	
   # clang erroneously sets feature detection flags for 
   # __float128 even though it is not supported for CUDA / HIP,
   # see https://bugs.llvm.org/show_bug.cgi?id=47559.
-  set(CUDA_CXX_FLAGS "-U__FLOAT128__ -U__SIZEOF_FLOAT128__ -isystem $HIPSYCL_PATH/include/AdaptiveCpp/hipSYCL/std/hiplike" CACHE STRING "Arguments passed to compiler to compile SYCL applications with CUDA")
+  set(CUDA_CXX_FLAGS "-U__FLOAT128__ -U__SIZEOF_FLOAT128__ -isystem $HIPSYCL_PATH/${CMAKE_INSTALL_INCLUDEDIR}/AdaptiveCpp/hipSYCL/std/hiplike" CACHE STRING "Arguments passed to compiler to compile SYCL applications with CUDA")
 endif()
 
 # always need -D_ENABLE_EXTENDED_ALIGNED_STORAGE to allow correctly aligned local memory on CPU
@@ -526,21 +528,21 @@ configure_file(
   ${PROJECT_SOURCE_DIR}/include/hipSYCL/common/config.hpp.in
   ${PROJECT_BINARY_DIR}/include/hipSYCL/common/config.hpp)
 
-install(DIRECTORY include/CL DESTINATION include/AdaptiveCpp/ FILES_MATCHING PATTERN "*.hpp")
-install(DIRECTORY include/SYCL DESTINATION include/AdaptiveCpp/ FILES_MATCHING PATTERN "*.hpp")
-install(DIRECTORY include/hipSYCL DESTINATION include/AdaptiveCpp/ FILES_MATCHING PATTERN "*.hpp")
-install(DIRECTORY include/hipSYCL DESTINATION include/AdaptiveCpp/ FILES_MATCHING PATTERN "*.h")
-install(DIRECTORY include/hipSYCL/std DESTINATION include/AdaptiveCpp/hipSYCL/ )
-install(FILES ${PROJECT_BINARY_DIR}/include/hipSYCL/common/config.hpp DESTINATION include/AdaptiveCpp/hipSYCL/common/)
+install(DIRECTORY include/CL DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/AdaptiveCpp/ FILES_MATCHING PATTERN "*.hpp")
+install(DIRECTORY include/SYCL DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/AdaptiveCpp/ FILES_MATCHING PATTERN "*.hpp")
+install(DIRECTORY include/hipSYCL DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/AdaptiveCpp/ FILES_MATCHING PATTERN "*.hpp")
+install(DIRECTORY include/hipSYCL DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/AdaptiveCpp/ FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY include/hipSYCL/std DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/AdaptiveCpp/hipSYCL/ )
+install(FILES ${PROJECT_BINARY_DIR}/include/hipSYCL/common/config.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/AdaptiveCpp/hipSYCL/common/)
 
 if(NOT WIN32)
 # Windows is case-insensitive, so don't copy to sycl/sycl.hpp as
 # we already have SYCL/sycl.hpp
-install(FILES include/SYCL/sycl.hpp DESTINATION include/AdaptiveCpp/sycl/)
+install(FILES include/SYCL/sycl.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/AdaptiveCpp/sycl/)
 endif()
-install(PROGRAMS bin/acpp DESTINATION bin)
-install(PROGRAMS bin/acpp DESTINATION bin RENAME syclcc)
-install(PROGRAMS bin/acpp DESTINATION bin RENAME syclcc-clang)
+install(PROGRAMS bin/acpp DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(PROGRAMS bin/acpp DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME syclcc)
+install(PROGRAMS bin/acpp DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME syclcc-clang)
 
 
 install(FILES ${ACPP_CONFIG_FILE_PATH}/acpp-core.json DESTINATION ${ACPP_CONFIG_FILE_INSTALL_DIR})
@@ -560,12 +562,12 @@ include(GNUInstallDirs)
 
 
 set(HIPSYCL_INSTALL_CMAKE_DIR
-  "lib/cmake/hipSYCL" CACHE PATH "Install path for legacy CMake config files")
+  "${CMAKE_INSTALL_LIBDIR}/cmake/hipSYCL" CACHE PATH "Install path for legacy CMake config files")
 
 # Set relative paths for install root in the following variables so that
 # configure_package_config_file will generate paths relative whatever is
 # the future install root
-set(HIPSYCL_INSTALL_COMPILER_DIR bin)
+set(HIPSYCL_INSTALL_COMPILER_DIR ${CMAKE_INSTALL_BINDIR})
 set(HIPSYCL_INSTALL_LAUNCHER_DIR ${HIPSYCL_INSTALL_CMAKE_DIR})
 set(HIPSYCL_INSTALL_LAUNCHER_RULE_DIR ${HIPSYCL_INSTALL_CMAKE_DIR})
 
@@ -608,12 +610,12 @@ mark_as_advanced(
 # Legacy module (Open SYCL)
 
 set(OPENSYCL_INSTALL_CMAKE_DIR
-  "lib/cmake/OpenSYCL" CACHE PATH "Install path for CMake config files")
+    "${CMAKE_INSTALL_LIBDIR}/cmake/OpenSYCL" CACHE PATH "Install path for CMake config files")
 
 # Set relative paths for install root in the following variables so that
 # configure_package_config_file will generate paths relative whatever is
 # the future install root
-set(OPENSYCL_INSTALL_COMPILER_DIR bin)
+set(OPENSYCL_INSTALL_COMPILER_DIR ${CMAKE_INSTALL_BINDIR})
 set(OPENSYCL_INSTALL_LAUNCHER_DIR ${OPENSYCL_INSTALL_CMAKE_DIR})
 set(OPENSYCL_INSTALL_LAUNCHER_RULE_DIR ${OPENSYCL_INSTALL_CMAKE_DIR})
 
@@ -656,12 +658,12 @@ mark_as_advanced(
 
 
 set(ADAPTIVECPP_INSTALL_CMAKE_DIR
-  "lib/cmake/AdaptiveCpp" CACHE PATH "Install path for CMake config files")
+    "${CMAKE_INSTALL_LIBDIR}/cmake/AdaptiveCpp" CACHE PATH "Install path for CMake config files")
 
 # Set relative paths for install root in the following variables so that
 # configure_package_config_file will generate paths relative whatever is
 # the future install root
-set(ADAPTIVECPP_INSTALL_COMPILER_DIR bin)
+set(ADAPTIVECPP_INSTALL_COMPILER_DIR ${CMAKE_INSTALL_BINDIR})
 set(ADAPTIVECPP_INSTALL_LAUNCHER_DIR ${ADAPTIVECPP_INSTALL_CMAKE_DIR})
 set(ADAPTIVECPP_INSTALL_LAUNCHER_RULE_DIR ${ADAPTIVECPP_INSTALL_CMAKE_DIR})
 

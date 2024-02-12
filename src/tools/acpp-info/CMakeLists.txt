@@ -12,4 +12,4 @@ target_link_libraries(acpp-info PRIVATE acpp-rt)
 target_link_libraries(acpp-info PRIVATE ${ACPP_RT_SANITIZE_FLAGS})
 target_compile_options(acpp-info PRIVATE ${ACPP_RT_SANITIZE_FLAGS})
 
-install(TARGETS acpp-info DESTINATION bin)
+install(TARGETS acpp-info DESTINATION ${CMAKE_INSTALL_BINDIR})
