@@ -39,10 +39,6 @@
 namespace {
 using namespace hipsycl::compiler;
 void markLoopParallel(llvm::Function &F, llvm::Loop *L) {
-#if LLVM_VERSION_MAJOR > 12 ||                                                                     \
-    (LLVM_VERSION_MAJOR == 12 && LLVM_VERSION_MINOR == 0 && LLVM_VERSION_PATCH == 1)
-  // LLVM < 12.0.1 might miscompile if conditionals in "parallel" loop (https://llvm.org/PR46666)
-
   // Mark memory accesses with access group
   auto *MDAccessGroup = llvm::MDNode::getDistinct(F.getContext(), {});
   for (auto *BB : L->blocks()) {
@@ -75,7 +71,6 @@ void markLoopParallel(llvm::Function &F, llvm::Loop *L) {
       )
     }
   }
-#endif
 }
 
 void addVectorizationHints(const llvm::Function &F, const llvm::TargetTransformInfo &TTI,
@@ -89,7 +84,6 @@ void addVectorizationHints(const llvm::Function &F, const llvm::TargetTransformI
                              llvm::IntegerType::get(F.getContext(), 1)))});
     PostTransformMD.push_back(MDVectorize);
   }
-#if LLVM_VERSION_MAJOR >= 12
   // enable scalable vectorization
   if (TTI.supportsScalableVectors()) {
     if (!llvm::findOptionMDForLoop(L, "llvm.loop.vectorize.scalable.enable")) {
@@ -101,7 +95,6 @@ void addVectorizationHints(const llvm::Function &F, const llvm::TargetTransformI
       PostTransformMD.push_back(MDVectorize);
     }
   }
-#endif
 
   if (!PostTransformMD.empty()) {
     auto *LoopID =
