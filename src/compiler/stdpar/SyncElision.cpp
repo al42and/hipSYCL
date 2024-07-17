@@ -82,7 +82,7 @@ void identifyStoresPotentiallyForStdparArgHandling(
                 if (StdparFunctions.contains(CB->getCalledFunction())) {
                   Users.push_back(Current);
                   return true;
-                } else if(CB->getCalledFunction()->getName().startswith("llvm.lifetime")) {
+                } else if(CB->getCalledFunction()->getName().starts_with("llvm.lifetime")) {
                   return true;
                 }
               }
@@ -134,7 +134,7 @@ bool functionDoesNotAccessMemory(llvm::Function* F){
   if(!F)
     return true;
   if(F->isIntrinsic()) {
-    if(F->getName().startswith("llvm.lifetime")){
+    if(F->getName().starts_with("llvm.lifetime")){
       return true;
     }
   }
@@ -202,7 +202,7 @@ void forEachReachableInstructionRequiringSync(
   while(Current) {
     if(auto* CB = llvm::dyn_cast<llvm::CallBase>(Current)) {
       llvm::Function* CalledF = CB->getCalledFunction();
-      if(CalledF->getName().equals(BarrierBuiltinName)) {
+      if(CalledF->getName() == BarrierBuiltinName) {
         // basic block already contains barrier; nothing to do
         return;
       }

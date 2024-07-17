@@ -193,8 +193,8 @@ bool LLVMToSpirvTranslator::toBackendFlavor(llvm::Module &M, PassHandler& PH) {
           // llvm-spirv translator does not like llvm.lifetime.start/end operate on generic
           // pointers.
           auto* CalledF = CB->getCalledFunction();
-          if (CalledF->getName().startswith("llvm.lifetime.start") ||
-              CalledF->getName().startswith("llvm.lifetime.end")) {
+          if (CalledF->getName().starts_with("llvm.lifetime.start") ||
+              CalledF->getName().starts_with("llvm.lifetime.end")) {
             if(CB->getNumOperands() > 1 && CB->getArgOperand(1)->getType()->isPointerTy())
               if (CB->getArgOperand(1)->getType()->getPointerAddressSpace() ==
                   ASMap[AddressSpace::Generic])

@@ -134,7 +134,7 @@ if(WITH_SSCP_COMPILER)
     include(FetchContent)
     FetchContent_Declare(LLVMSpirvTranslator
       GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-LLVM-Translator
-      GIT_TAG origin/${LLVMSPIRV_BRANCH}
+      GIT_TAG origin/main #${LLVMSPIRV_BRANCH}
       GIT_SHALLOW ON
     )
 

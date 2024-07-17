@@ -71,7 +71,7 @@ bool NameStartsWithItaniumIdentifier(llvm::StringRef Name, llvm::StringRef Ident
 
 bool isRestrictedToRegularMalloc(llvm::Function* F) {
   llvm::StringRef Name = F->getName();
-  if(!Name.startswith("_Z"))
+  if(!Name.starts_with("_Z"))
     return false;
   
   if(NameStartsWithItaniumIdentifier(Name, "hipsycl"))
@@ -82,7 +82,7 @@ bool isRestrictedToRegularMalloc(llvm::Function* F) {
 
 bool isStdFunction(llvm::Function* F) {
   llvm::StringRef Name = F->getName();
-  if(Name.startswith("_ZNSt") || Name.startswith("_ZSt") || Name.startswith("_ZNKSt"))
+  if(Name.starts_with("_ZNSt") || Name.starts_with("_ZSt") || Name.starts_with("_ZNKSt"))
     return true;
   return false;
 }

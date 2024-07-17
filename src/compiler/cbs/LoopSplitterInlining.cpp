@@ -119,7 +119,7 @@ bool fillTransitiveSplitterCallers(llvm::Function &F,
   std::transform(F.begin(), F.end(), std::back_inserter(Blocks), [](auto &BB) { return &BB; });
 
   if (fillTransitiveSplitterCallers(Blocks, SAA, FuncsWSplitter,
-                                    InIntrinsic || F.getName().startswith("__acpp_sscp"))) {
+                                    InIntrinsic || F.getName().starts_with("__acpp_sscp"))) {
     FuncsWSplitter.insert(&F);
     return true;
   }
