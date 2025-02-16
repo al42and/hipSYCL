@@ -9,6 +9,6 @@
  */
 // SPDX-License-Identifier: BSD-2-Clause
 
-#define TINA_IMPLEMENTATION
-#include "hipSYCL/glue/generic/host/tina.h"
+#define MINICORO_IMPL
+#include "hipSYCL/glue/generic/host/minicoro.h"
 

@@ -25,7 +25,7 @@
 #include <functional>
 #include <vector>
 
-#include "tina.h"
+#include "minicoro.h"
 
 #include "hipSYCL/sycl/libkernel/range.hpp"
 #include "hipSYCL/sycl/libkernel/id.hpp"
@@ -51,7 +51,6 @@ static void* next_item = reinterpret_cast<void*>(0xff11);
 }
 static constexpr size_t fiber_stack_size = 256*1024;
 
-
 template<int Dim>
 class collective_execution_engine {
 public:
@@ -65,74 +64,86 @@ public:
         _groups{group_range_decomposition}, _my_group_region{my_group_region},
         _current_coro{nullptr} {}
 
-
   template <class WorkItemFunction>
   void run_kernel(WorkItemFunction f) {
     _kernel = f;
     _fibers_spawned = false;
     _master_group_position = 0;
 
-    // Create master fiber
-    _fibers[0] = tina_init(nullptr, fiber_stack_size, &master_coro, this);
+    // Create master coroutine
+    mco_desc desc = mco_desc_init(master_entry, fiber_stack_size);
+    desc.user_data = this;
+    mco_coro* master_co;
+    mco_result res = mco_create(&master_co, &desc);
+    assert(res == MCO_SUCCESS);
+    _fibers[0] = master_co;
 
     bool all_done = false;
 
-    // Launch master fiber
+    // Launch master coroutine
     void* result = resume(_fibers[0]);
-    if (_fibers[0]->completed) {
+    if (mco_status(_fibers[0]) == MCO_DEAD) {
       all_done = true;
     } else {
-      // Encountered a barrier, call for help
       assert(result == yield_kind::spawn);
       spawn_fibers();
     }
 
     while (!all_done) {
       all_done = true;
-      // Process all coroutines
-      // The only way for the coroutine to yield is either a barrier or quitting.
-      // We can't ensure whether all the work-items hit the *same* barrier, and 
-      // finished work-iterms don't have to wait on barriers, 
-      // so we just cycle through all active coroutines and hope for the best.
       void* master_yield_kind = nullptr;
-      for (auto& coro : _fibers) {
-        assert(coro);
-        if (!coro->completed) {
-          void* result = resume(coro);
-          if (!coro->completed) {
+      for (auto& co : _fibers) {
+        if (co && mco_status(co) != MCO_DEAD) {
+          void* result = resume(co);
+          if (mco_status(co) != MCO_DEAD) {
             assert(result == yield_kind::barrier || result == yield_kind::next_item);
-            if (master_yield_kind == nullptr) master_yield_kind = result;
-            assert(result == master_yield_kind && "Fibers yielded for different reasons on the same pass");
+            if (!master_yield_kind) master_yield_kind = result;
+            assert(result == master_yield_kind && "Inconsistent yield reasons");
             all_done = false;
           }
         }
       }
-    };
+    }
 
     // Cleanup
-    for(auto& coro : _fibers) {
-      if(coro) {
-        free(coro->buffer); // This frees coro itself too
-        coro = nullptr;
+    for (auto& co : _fibers) {
+      if (co) {
+        mco_destroy(co);
+        co = nullptr;
       }
     }
   }
 
-  void* resume(tina* coro) {
-    _current_coro = coro;  // Track current coroutine for barriers
-    void* result = tina_resume(coro, nullptr);
+  void* resume(mco_coro* co) {
+    _current_coro = co;
+    mco_result res = mco_resume(co);
     _current_coro = nullptr;
-    return result;
+
+    if (res != MCO_SUCCESS) {
+      assert(false && "mco_resume failed");
+      return nullptr;
+    }
+
+    if (mco_status(co) == MCO_DEAD)
+      return nullptr;
+
+    void* yield_kind = nullptr;
+    size_t bytes = mco_get_bytes_stored(co);
+    if (bytes >= sizeof(void*))
+      mco_pop(co, &yield_kind, sizeof(void*));
+    return yield_kind;
   }
 
   void barrier() {
-    assert(_current_coro != nullptr && "Barrier called outside coroutine context");
+    assert(_current_coro && "Barrier outside coroutine");
     if (!_fibers_spawned) {
-      // Technically, we can only yield once here, but it's more explicit this way
-      tina_yield(_current_coro, yield_kind::spawn);
-      tina_yield(_current_coro, yield_kind::next_item);
+      mco_push(_current_coro, &yield_kind::spawn, sizeof(void*));
+      mco_yield(_current_coro);
+      mco_push(_current_coro, &yield_kind::next_item, sizeof(void*));
+      mco_yield(_current_coro);
     }
-    tina_yield(_current_coro, yield_kind::barrier);
+    mco_push(_current_coro, &yield_kind::barrier, sizeof(void*));
+    mco_yield(_current_coro);
   }
 
 private:
@@ -140,33 +151,30 @@ private:
   sycl::range<Dim> _local_size;
   sycl::id<Dim> _offset;
   bool _fibers_spawned;
-  std::vector<tina*> _fibers;
+  std::vector<mco_coro*> _fibers;
   std::function<void(sycl::id<Dim>, sycl::id<Dim>)> _kernel;
   size_t _master_group_position;
   const static_range_decomposition<Dim>& _groups;
   int _my_group_region;
+  mco_coro* _current_coro;
 
-  tina* _current_coro;
-
-  static void* master_coro(tina* coro, void* arg) {
-    auto* engine = static_cast<collective_execution_engine*>(coro->user_data);
-    engine->master_coro_body(coro);
-    return nullptr;
+  static void master_entry(mco_coro* co) {
+    auto* engine = static_cast<collective_execution_engine*>(mco_get_user_data(co));
+    engine->master_coro_body(co);
   }
 
-  void master_coro_body(tina* coro) {
+  void master_coro_body(mco_coro* co) {
     _groups.for_each_local_element(
-      _my_group_region, [this, coro](sycl::id<Dim> group_id) {
-        if(!_fibers_spawned) {
+      _my_group_region, [this, co](sycl::id<Dim> group_id) {
+        if (!_fibers_spawned) {
           iterate_range(_local_size, [&](sycl::id<Dim> local_id) {
-            if(!_fibers_spawned) {
+            if (!_fibers_spawned)
               execute_work_item(local_id, group_id);
-            }
           });
         } else {
-          assert(coro == _current_coro);
-          tina_yield(coro, yield_kind::next_item);
-          assert(coro == _current_coro);
+          assert(co == _current_coro);
+          mco_push(co, &yield_kind::next_item, sizeof(void*));
+          mco_yield(co);
           execute_work_item(sycl::id<Dim>{}, group_id);
         }
         ++_master_group_position;
@@ -179,25 +187,20 @@ private:
     size_t master_offset;
   };
 
-  static void* worker_coro(tina* coro, void* arg) {
-    auto* data = static_cast<CoroutineData*>(coro->user_data);
-    auto* engine = data->engine;
-    const auto local_id = data->local_id;
-    const auto master_offset = data->master_offset;
+  static void worker_entry(mco_coro* co) {
+    auto* data = static_cast<CoroutineData*>(mco_get_user_data(co));
+    data->engine->worker_coro_body(co, data->local_id, data->master_offset);
     delete data;
-
-    engine->worker_coro_body(coro, local_id, master_offset);
-    return nullptr;
   }
 
-  void worker_coro_body(tina* coro, sycl::id<Dim> local_id, size_t master_offset) {
+  void worker_coro_body(mco_coro* co, sycl::id<Dim> local_id, size_t master_offset) {
     size_t current_group = 0;
     _groups.for_each_local_element(
       _my_group_region, [&](sycl::id<Dim> group_id) {
-        if(current_group >= master_offset) {
-          assert(coro == _current_coro);
-          tina_yield(coro, yield_kind::next_item);
-          assert(coro == _current_coro);
+        if (current_group >= master_offset) {
+          assert(co == _current_coro);
+          mco_push(co, &yield_kind::next_item, sizeof(void*));
+          mco_yield(co);
           execute_work_item(local_id, group_id);
         }
         current_group++;
@@ -208,9 +211,13 @@ private:
     size_t n = 0;
     iterate_range(_local_size, [&](sycl::id<Dim> local_id) {
       if (n != 0) {
-        // TODO: Use PMR for allocation of CoroutineData and tina stack
         auto* data = new CoroutineData{this, local_id, _master_group_position};
-        _fibers[n] = tina_init(nullptr, fiber_stack_size, &worker_coro, data);
+        mco_desc desc = mco_desc_init(worker_entry, fiber_stack_size);
+        desc.user_data = data;
+        mco_coro* worker_co;
+        mco_result res = mco_create(&worker_co, &desc);
+        assert(res == MCO_SUCCESS);
+        _fibers[n] = worker_co;
       }
       n++;
     });
@@ -220,7 +227,6 @@ private:
   void execute_work_item(sycl::id<Dim> local_id, sycl::id<Dim> group_id) {
     _kernel(local_id, group_id);
   }
-
 };
 
 }
