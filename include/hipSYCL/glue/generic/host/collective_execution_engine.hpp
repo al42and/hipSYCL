@@ -17,10 +17,10 @@
  * Allow disabling fibers; and don't try using them in device pass.
  */
 #if !defined(ACPP_NO_FIBERS) && !defined(SYCL_DEVICE_ONLY)
-#define ACPP_HAS_FIBERS
+#define ACPP_USE_FIBERS
 #endif
 
-#ifdef ACPP_HAS_FIBERS
+#ifdef ACPP_USE_FIBERS
 
 #include <functional>
 #include <vector>
