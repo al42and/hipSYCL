@@ -144,6 +144,37 @@ inline float __acpp_sscp_log1p_f32(float x) {
 }
 )__",
   });
+  result.push_back({
+    .name = "__acpp_sscp_erf_f32",
+    .code = R"__(
+inline float __acpp_sscp_erf_f32(float x) {
+  // Abramowitz and Stegun approximation (maximum error ~1.5e-7)
+  const float a1 =  0.254829592f;
+  const float a2 = -0.284496736f;
+  const float a3 =  1.421413741f;
+  const float a4 = -1.453152027f;
+  const float a5 =  1.061405429f;
+  const float p  =  0.3275911f;
+
+  float sign = (x < 0.0f) ? -1.0f : 1.0f;
+  x = fabs(x);
+
+  float t = 1.0f / (1.0f + p * x);
+  float y = 1.0f - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * exp(-x * x);
+
+  return sign * y;
+}
+)__",
+  });
+  result.push_back({
+    .name = "__acpp_sscp_erfc_f32",
+    .code = R"__(
+inline float __acpp_sscp_erfc_f32(float x) {
+  return 1.0f - __acpp_sscp_erf_f32(x);
+}
+)__",
+    .deps = {"__acpp_sscp_erf_f32"},
+  });
   return result;
 }
 
@@ -251,6 +282,42 @@ std::vector<ExternalFunctionInfo> initExternalFunctionTable() {
       .argsCount = 3
     },
     // end of memset
+
+    // memmove
+    {
+      .name = "llvm.memmove",
+      .replacement = "memmove",
+      .code = R"__(
+  #define __MEMMOVE(addrspace1, addrspace2) \
+  inline void memmove(addrspace1 void* dst, const addrspace2 void* src, size_t size) { \
+      if ((uintptr_t)dst < (uintptr_t)src || (uintptr_t)dst >= (uintptr_t)src + size) { \
+          for (size_t i = 0; i < size; ++i) { \
+              ((addrspace1 uchar*)dst)[i] = ((const addrspace2 uchar*)src)[i]; \
+          } \
+      } else { \
+          for (size_t i = size; i > 0; --i) { \
+              ((addrspace1 uchar*)dst)[i-1] = ((const addrspace2 uchar*)src)[i-1]; \
+          } \
+      } \
+  }
+
+  #define __MEMMOVE_FOR_EACH_SRC(M, DST_AS) \
+      M(DST_AS, thread) \
+      M(DST_AS, threadgroup) \
+      M(DST_AS, device) \
+      M(DST_AS, constant)
+
+  #define __MEMMOVE_FOR_EACH_DST(M) \
+      __MEMMOVE_FOR_EACH_SRC(M, thread) \
+      __MEMMOVE_FOR_EACH_SRC(M, threadgroup) \
+      __MEMMOVE_FOR_EACH_SRC(M, device)
+
+  __MEMMOVE_FOR_EACH_DST(__MEMMOVE)
+      )__",
+      .exactMatch = false,
+      .argsCount = 3
+    },
+    // end of memmove
 
     // subgroups
     {
