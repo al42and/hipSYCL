@@ -333,6 +333,158 @@ public:
       nameKernel(F);
     }
 
+    // Propagate GPU occupancy attributes from kernel body (lambda/functor)
+    // operator() to the __global__ kernel function. Without this, attributes
+    // like __launch_bounds__ on the lambda are lost after inlining because
+    // they are AST-level function attributes, not IR metadata.
+    //
+    // Since GPU-specific attributes (amdgpu_flat_work_group_size, etc.) are
+    // rejected by Clang's semantic checker on non-kernel functions like
+    // lambda operator(), we also support annotate-based hints:
+    //   __attribute__((annotate("launch_bounds", maxThreads, minBlocks)))
+    //   __attribute__((annotate("amdgpu_waves_per_eu", min, max)))
+    // These are converted to the real GPU attributes on the kernel function.
+    for(auto F : UserKernels)
+    {
+      auto BodyIt = KernelBodies.find(F);
+      if (BodyIt == KernelBodies.end())
+        continue;
+
+      auto* BodyDecl = BodyIt->second->getAsCXXRecordDecl();
+      if (!BodyDecl)
+        continue;
+
+      for (auto* Method : BodyDecl->methods()) {
+        if (!Method->isOverloadedOperator() ||
+            Method->getOverloadedOperator() != clang::OO_Call)
+          continue;
+
+        // Direct attribute propagation (if Clang accepted them on operator())
+        if (auto* A = Method->getAttr<clang::CUDALaunchBoundsAttr>()) {
+          if (!F->hasAttr<clang::CUDALaunchBoundsAttr>()) {
+            F->addAttr(clang::CUDALaunchBoundsAttr::CreateImplicit(
+                Instance.getASTContext(),
+                A->getMaxThreads(), A->getMinBlocks(), A->getMaxBlocks()));
+            HIPSYCL_DEBUG_INFO
+                << "AST processing: Propagating __launch_bounds__ to kernel: "
+                << F->getQualifiedNameAsString() << "\n";
+          }
+        }
+
+        if (auto* A = Method->getAttr<clang::AMDGPUFlatWorkGroupSizeAttr>()) {
+          if (!F->hasAttr<clang::AMDGPUFlatWorkGroupSizeAttr>()) {
+            F->addAttr(clang::AMDGPUFlatWorkGroupSizeAttr::CreateImplicit(
+                Instance.getASTContext(), A->getMin(), A->getMax()));
+            HIPSYCL_DEBUG_INFO
+                << "AST processing: Propagating amdgpu_flat_work_group_size to kernel: "
+                << F->getQualifiedNameAsString() << "\n";
+          }
+        }
+
+        if (auto* A = Method->getAttr<clang::AMDGPUWavesPerEUAttr>()) {
+          if (!F->hasAttr<clang::AMDGPUWavesPerEUAttr>()) {
+            F->addAttr(clang::AMDGPUWavesPerEUAttr::CreateImplicit(
+                Instance.getASTContext(), A->getMin(), A->getMax()));
+            HIPSYCL_DEBUG_INFO
+                << "AST processing: Propagating amdgpu_waves_per_eu to kernel: "
+                << F->getQualifiedNameAsString() << "\n";
+          }
+        }
+
+        if (auto* A = Method->getAttr<clang::AMDGPUNumSGPRAttr>()) {
+          if (!F->hasAttr<clang::AMDGPUNumSGPRAttr>()) {
+            F->addAttr(clang::AMDGPUNumSGPRAttr::CreateImplicit(
+                Instance.getASTContext(), A->getNumSGPR()));
+            HIPSYCL_DEBUG_INFO
+                << "AST processing: Propagating amdgpu_num_sgpr to kernel: "
+                << F->getQualifiedNameAsString() << "\n";
+          }
+        }
+
+        if (auto* A = Method->getAttr<clang::AMDGPUNumVGPRAttr>()) {
+          if (!F->hasAttr<clang::AMDGPUNumVGPRAttr>()) {
+            F->addAttr(clang::AMDGPUNumVGPRAttr::CreateImplicit(
+                Instance.getASTContext(), A->getNumVGPR()));
+            HIPSYCL_DEBUG_INFO
+                << "AST processing: Propagating amdgpu_num_vgpr to kernel: "
+                << F->getQualifiedNameAsString() << "\n";
+          }
+        }
+
+        // Annotate-based attribute propagation for lambdas.
+        // Clang rejects GPU-specific attributes on non-kernel functions,
+        // so users can use __attribute__((annotate(...))) as an alternative:
+        //   annotate("launch_bounds", maxThreads, minBlocks)
+        //   annotate("amdgpu_waves_per_eu", min, max)
+        //   annotate("amdgpu_flat_work_group_size", min, max)
+        for (auto* A : Method->specific_attrs<clang::AnnotateAttr>()) {
+          auto& Ctx = Instance.getASTContext();
+          llvm::StringRef Ann = A->getAnnotation();
+          auto Args = A->args();
+          auto getIntArg = [&](unsigned Idx) -> int {
+            if (Idx >= static_cast<unsigned>(std::distance(Args.begin(), Args.end())))
+              return 0;
+            auto It = Args.begin();
+            std::advance(It, Idx);
+            clang::Expr::EvalResult Result;
+            if ((*It)->EvaluateAsInt(Result, Ctx))
+              return Result.Val.getInt().getExtValue();
+            return 0;
+          };
+
+          if (Ann == "launch_bounds") {
+            int MaxThreads = getIntArg(0);
+            int MinBlocks = getIntArg(1);
+            if (MaxThreads > 0 && !F->hasAttr<clang::CUDALaunchBoundsAttr>()) {
+              auto* MaxExpr = clang::IntegerLiteral::Create(
+                  Ctx, llvm::APInt(32, MaxThreads), Ctx.IntTy, clang::SourceLocation());
+              auto* MinExpr = MinBlocks > 0 ? clang::IntegerLiteral::Create(
+                  Ctx, llvm::APInt(32, MinBlocks), Ctx.IntTy, clang::SourceLocation()) : nullptr;
+              F->addAttr(clang::CUDALaunchBoundsAttr::CreateImplicit(
+                  Ctx, MaxExpr, MinExpr, nullptr));
+              HIPSYCL_DEBUG_INFO
+                  << "AST processing: Propagating annotate(launch_bounds, "
+                  << MaxThreads << ", " << MinBlocks << ") to kernel: "
+                  << F->getQualifiedNameAsString() << "\n";
+            }
+          } else if (Ann == "amdgpu_flat_work_group_size") {
+            int Min = getIntArg(0);
+            int Max = getIntArg(1);
+            if (Min > 0 && Max > 0 && !F->hasAttr<clang::AMDGPUFlatWorkGroupSizeAttr>()) {
+              auto* MinExpr = clang::IntegerLiteral::Create(
+                  Ctx, llvm::APInt(32, Min), Ctx.IntTy, clang::SourceLocation());
+              auto* MaxExpr = clang::IntegerLiteral::Create(
+                  Ctx, llvm::APInt(32, Max), Ctx.IntTy, clang::SourceLocation());
+              F->addAttr(clang::AMDGPUFlatWorkGroupSizeAttr::CreateImplicit(
+                  Ctx, MinExpr, MaxExpr));
+              HIPSYCL_DEBUG_INFO
+                  << "AST processing: Propagating annotate(amdgpu_flat_work_group_size, "
+                  << Min << ", " << Max << ") to kernel: "
+                  << F->getQualifiedNameAsString() << "\n";
+            }
+          } else if (Ann == "amdgpu_waves_per_eu") {
+            int Min = getIntArg(0);
+            int Max = getIntArg(1);
+            if (Min > 0 && !F->hasAttr<clang::AMDGPUWavesPerEUAttr>()) {
+              auto* MinExpr = clang::IntegerLiteral::Create(
+                  Ctx, llvm::APInt(32, Min), Ctx.IntTy, clang::SourceLocation());
+              auto* MaxExpr = Max > 0 ? clang::IntegerLiteral::Create(
+                  Ctx, llvm::APInt(32, Max), Ctx.IntTy, clang::SourceLocation()) : nullptr;
+              F->addAttr(clang::AMDGPUWavesPerEUAttr::CreateImplicit(
+                  Ctx, MinExpr, MaxExpr));
+              HIPSYCL_DEBUG_INFO
+                  << "AST processing: Propagating annotate(amdgpu_waves_per_eu, "
+                  << Min << ", " << Max << ") to kernel: "
+                  << F->getQualifiedNameAsString() << "\n";
+            }
+          }
+        }
+
+        break;
+      }
+    }
+
+
     for(auto* Kernel : HierarchicalKernels){
       HIPSYCL_DEBUG_INFO << "AST Processing: Detected parallel_for_workgroup kernel "
                         << Kernel->getQualifiedNameAsString() << "\n";
